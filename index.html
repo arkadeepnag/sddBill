@@ -319,8 +319,17 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // REPLACE THESE VALUES WITH YOUR FIREBASE PROJECT CONFIGURATION
+        // You can find these in Firebase Console -> Project Settings -> General -> Your apps
+       const firebaseConfig = {
+    apiKey: "AIzaSyCFl6h4c4EGJ_m4mUAZ4IgkS1ZK5erRGL8",
+    authDomain: "sddbill-6e03b.firebaseapp.com",
+    projectId: "sddbill-6e03b",
+    storageBucket: "sddbill-6e03b.firebasestorage.app",
+    messagingSenderId: "434745405178",
+    appId: "1:434745405178:web:6f619160be7e9882342343",
+    measurementId: "G-18JJHL6HGL"
+  };
         
         let appFirebase, db, auth;
         let currentUser = null;
@@ -347,16 +356,13 @@
 
                 if (auth) {
                     try {
-                        if (typeof __initial_auth_token !== 'undefined') {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        // Standard Anonymous Login for standalone hosting
+                        await signInAnonymously(auth);
                         currentUser = auth.currentUser;
                         if (currentUser) {
-                            // Isolate data privately to the logged-in user context
-                            invoicesCol = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'invoices');
-                            metaDoc = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'metadata', 'settings');
+                            // Standard Firestore paths
+                            invoicesCol = collection(db, 'users', currentUser.uid, 'invoices');
+                            metaDoc = doc(db, 'users', currentUser.uid, 'metadata', 'settings');
                             this.setupCloudSync();
                         }
                     } catch(e) { console.error("Auth error", e); }
