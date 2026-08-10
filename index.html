@@ -212,7 +212,7 @@
             <div id="view-list" class="bg-white rounded-lg shadow-lg p-6 mb-8 block">
                 <div class="flex justify-between items-center mb-6 border-b pb-4">
                     <div>
-                        <h2 class="text-2xl font-bold text-gray-800">Previous Bills</h2>
+                        <h2 class="text-2xl font-bold text-gray-800">Global Invoices</h2>
                         <p class="text-xs text-gray-500 mt-1">All invoices are shared across devices and users.</p>
                     </div>
                     <button onclick="app.navigate('create')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium transition-colors shadow flex items-center">
@@ -240,7 +240,7 @@
                 
                 <div id="empty-state" class="text-center py-12 text-gray-500 hidden">
                     <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    <p class="text-lg">No invoices generated yet.</p>
+                    <p class="text-lg">No shared invoices generated yet.</p>
                 </div>
             </div>
 
@@ -351,12 +351,11 @@
             getFirestore,
             doc,
             setDoc,
-            updateDoc,
             onSnapshot,
-            collection,
-            runTransaction
+            collection
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Your specific Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyCFl6h4c4EGJ_m4mUAZ4IgkS1ZK5erRGL8",
             authDomain: "sddbill-6e03b.firebaseapp.com",
@@ -372,7 +371,6 @@
         let auth = null;
         let currentUser = null;
         let invoicesCol = null;
-        let metaDoc = null;
 
         try {
             appFirebase = initializeApp(firebaseConfig);
@@ -405,7 +403,6 @@
             showError(message) {
                 const errDiv = document.getElementById("form-error");
                 const errMsg = document.getElementById("form-error-msg");
-
                 if (errMsg) errMsg.textContent = message;
                 if (errDiv) {
                     errDiv.classList.remove("hidden");
@@ -451,33 +448,20 @@
 
             calculateShipmentAmount(shipment) {
                 const value = this.toNumber(shipment.rate);
-
                 if (value <= 0) return 0;
-
                 let amount;
-
                 if (shipment.amountMode === "direct") {
-                    // Direct Amount mode:
-                    // the entered value itself is the shipment value.
                     amount = value;
                 } else {
                     const wt = this.toNumber(shipment.wt);
-
                     if (wt <= 0) return 0;
-
-                    // Rate × KG mode.
                     amount = value * wt;
                 }
-
-                // If the entered amount/rate already includes 18% GST,
-                // convert it to the taxable/base amount before calculating
-                // CGST and SGST.
                 return shipment.includesGst ? amount / 1.18 : amount;
             },
 
             calculateTotals(shipments = this.currentShipments) {
                 let subtotal = 0;
-
                 shipments.forEach(shipment => {
                     shipment.baseAmt = this.calculateShipmentAmount(shipment);
                     subtotal += shipment.baseAmt;
@@ -492,21 +476,13 @@
                 document.getElementById("summary-cgst").textContent = cgst.toFixed(2);
                 document.getElementById("summary-sgst").textContent = sgst.toFixed(2);
                 document.getElementById("summary-total").textContent = grandTotal.toFixed(2);
-                document.getElementById("amount-in-words").textContent =
-                    `${this.numberToWords(grandTotal)} ONLY`;
+                document.getElementById("amount-in-words").textContent = `${this.numberToWords(grandTotal)} ONLY`;
 
-                return {
-                    subtotal,
-                    cgst,
-                    sgst,
-                    totalTax,
-                    grandTotal
-                };
+                return { subtotal, cgst, sgst, totalTax, grandTotal };
             },
 
             init: async function () {
                 this.showLoader("Connecting to Database...");
-
                 const dateInput = document.getElementById("i-date");
                 if (dateInput && !dateInput.value) {
                     dateInput.value = this.todayISO();
@@ -524,18 +500,10 @@
                 try {
                     await signInAnonymously(auth);
                     currentUser = auth.currentUser;
+                    if (!currentUser) throw new Error("Anonymous authentication returned no user.");
 
-                    if (!currentUser) {
-                        throw new Error("Anonymous authentication returned no user.");
-                    }
-
-                    // IMPORTANT:
-                    // All authenticated users share this collection.
-                    // This means invoices created on one device/user account
-                    // are visible on every other device/user account.
+                    // Connect to the GLOBAL invoices collection so everyone sees them
                     invoicesCol = collection(db, "invoices");
-                    metaDoc = doc(db, "metadata", "settings");
-
                     this.setupCloudSync();
                 } catch (error) {
                     console.error("Authentication error:", error);
@@ -545,47 +513,27 @@
             },
 
             bindStaticEvents() {
-                // Delegated input/change handling prevents stale inline handlers
-                // and makes editing rows more reliable.
                 const tbody = document.getElementById("shipments-body");
-
                 tbody.addEventListener("input", event => {
                     const input = event.target.closest("[data-field]");
                     if (!input) return;
-
                     const row = input.closest("tr[data-row-id]");
                     if (!row) return;
-
-                    this.updateShipment(
-                        row.dataset.rowId,
-                        input.dataset.field,
-                        input.value
-                    );
+                    this.updateShipment(row.dataset.rowId, input.dataset.field, input.value);
                 });
 
                 tbody.addEventListener("change", event => {
                     const input = event.target.closest("[data-field]");
                     if (!input) return;
-
                     const row = input.closest("tr[data-row-id]");
                     if (!row) return;
-
-                    const value =
-                        input.dataset.field === "includesGst"
-                            ? input.checked
-                            : input.value;
-
-                    this.updateShipment(
-                        row.dataset.rowId,
-                        input.dataset.field,
-                        value
-                    );
+                    const value = input.dataset.field === "includesGst" ? input.checked : input.value;
+                    this.updateShipment(row.dataset.rowId, input.dataset.field, value);
                 });
 
                 tbody.addEventListener("click", event => {
                     const button = event.target.closest("[data-remove-row]");
                     if (!button) return;
-
                     this.removeShipmentRow(button.dataset.removeRow);
                 });
 
@@ -599,77 +547,69 @@
             setupCloudSync() {
                 if (!currentUser || !db) return;
 
-                onSnapshot(
-                    metaDoc,
-                    snapshot => {
-                        if (snapshot.exists()) {
-                            const sequence = this.toInteger(snapshot.data().currentSequence);
-                            this.currentInvNumber = sequence > 0 ? sequence : 5;
-                        } else {
-                            this.currentInvNumber = 5;
+                // Real-time listener for the global invoices collection
+                onSnapshot(invoicesCol, snapshot => {
+                    const loaded = [];
+                    let maxSequence = 4; // Ensures the first bill is at least 5
+
+                    snapshot.forEach(docSnap => {
+                        const data = docSnap.data();
+
+                        // Scan to find the highest invoice number across everyone
+                        if (data.invNo) {
+                            const parts = data.invNo.split('/');
+                            const seq = parseInt(parts[parts.length - 1], 10);
+                            if (!isNaN(seq) && seq > maxSequence) {
+                                maxSequence = seq;
+                            }
                         }
 
-                        // If the user is creating a new invoice, update the
-                        // displayed number when the sequence changes.
-                        if (!this.editingInvoiceId) {
-                            this.updateDisplayedInvoiceNumber();
-                        }
-                    },
-                    error => {
-                        console.error("Sequence sync error:", error);
+                        loaded.push({
+                            ...data,
+                            id: docSnap.id,
+                            consignee: {
+                                name: String(data.consignee?.name ?? ""),
+                                gst: String(data.consignee?.gst ?? ""),
+                                address: String(data.consignee?.address ?? ""),
+                                phone: String(data.consignee?.phone ?? "")
+                            },
+                            shipments: Array.isArray(data.shipments)
+                                ? data.shipments.map(s => this.normalizeShipment(s))
+                                : [],
+                            totals: {
+                                subtotal: this.toNumber(data.totals?.subtotal),
+                                cgst: this.toNumber(data.totals?.cgst),
+                                sgst: this.toNumber(data.totals?.sgst),
+                                totalTax: this.toNumber(data.totals?.totalTax),
+                                grandTotal: this.toNumber(data.totals?.grandTotal)
+                            }
+                        });
+                    });
+
+                    loaded.sort((a, b) => this.toNumber(a.createdAt) - this.toNumber(b.createdAt));
+                    this.invoices = loaded;
+                    
+                    // Set next number globally
+                    this.currentInvNumber = maxSequence + 1;
+                    if (!this.editingInvoiceId) {
+                        this.updateDisplayedInvoiceNumber();
                     }
-                );
 
-                // Global invoice listener: every authenticated user sees
-                // every invoice in the shared collection.
-                onSnapshot(
-                    invoicesCol,
-                    snapshot => {
-                        const loaded = [];
+                    this.renderList();
 
-                        snapshot.forEach(docSnap => {
-                            const data = docSnap.data();
-
-                            loaded.push({
-                                ...data,
-                                id: docSnap.id,
-                                consignee: {
-                                    name: String(data.consignee?.name ?? ""),
-                                    gst: String(data.consignee?.gst ?? ""),
-                                    address: String(data.consignee?.address ?? ""),
-                                    phone: String(data.consignee?.phone ?? "")
-                                },
-                                shipments: Array.isArray(data.shipments)
-                                    ? data.shipments.map(s => this.normalizeShipment(s))
-                                    : [],
-                                totals: {
-                                    subtotal: this.toNumber(data.totals?.subtotal),
-                                    cgst: this.toNumber(data.totals?.cgst),
-                                    sgst: this.toNumber(data.totals?.sgst),
-                                    totalTax: this.toNumber(data.totals?.totalTax),
-                                    grandTotal: this.toNumber(data.totals?.grandTotal)
-                                }
-                            });
-                        });
-
-                        loaded.sort((a, b) => {
-                            return this.toNumber(a.createdAt) - this.toNumber(b.createdAt);
-                        });
-
-                        this.invoices = loaded;
-                        this.renderList();
-
-                        if (!this.initialLoadComplete) {
-                            this.initialLoadComplete = true;
-                            this.hideLoader();
-                        }
-                    },
-                    error => {
-                        console.error("Invoice sync error:", error);
+                    if (!this.initialLoadComplete) {
+                        this.initialLoadComplete = true;
                         this.hideLoader();
+                    }
+                }, error => {
+                    console.error("Invoice sync error:", error);
+                    this.hideLoader();
+                    if (error.code === 'permission-denied') {
+                        this.showError("Permission denied! Please update your Firebase Firestore rules to allow read/write.");
+                    } else {
                         this.showError("Failed to sync invoices from the database.");
                     }
-                );
+                });
             },
 
             navigate(view) {
@@ -686,8 +626,6 @@
                 if (view === "create") {
                     createView.classList.remove("hidden");
                     navCreate.classList.add("bg-blue-900");
-
-                    // Only initialise a new form when we are not already editing.
                     if (!this.editingInvoiceId) {
                         this.setupCreateForm();
                     }
@@ -708,9 +646,7 @@
 
             updateDisplayedInvoiceNumber() {
                 if (this.editingInvoiceId) return;
-
-                document.getElementById("display-inv-no").textContent =
-                    this.generateInvString(this.currentInvNumber);
+                document.getElementById("display-inv-no").textContent = this.generateInvString(this.currentInvNumber);
             },
 
             todayISO() {
@@ -723,13 +659,10 @@
 
             setupCreateForm(invoiceData = null) {
                 this.clearError();
-
                 const form = document.getElementById("invoice-form");
                 const tbody = document.getElementById("shipments-body");
-
                 this.currentShipments = [];
                 this.editingInvoiceId = invoiceData?.id || null;
-
                 form.reset();
                 tbody.innerHTML = "";
 
@@ -737,18 +670,13 @@
                     document.getElementById("form-title").textContent = "Edit Invoice";
                     document.getElementById("editing-id").value = invoiceData.id;
                     document.getElementById("display-inv-no").textContent = invoiceData.invNo || "";
-
                     document.getElementById("c-name").value = invoiceData.consignee?.name || "";
                     document.getElementById("c-gst").value = invoiceData.consignee?.gst || "";
                     document.getElementById("c-address").value = invoiceData.consignee?.address || "";
                     document.getElementById("c-phone").value = invoiceData.consignee?.phone || "";
-                    document.getElementById("i-date").value =
-                        invoiceData.dateRaw || this.todayISO();
+                    document.getElementById("i-date").value = invoiceData.dateRaw || this.todayISO();
 
-                    const shipments = Array.isArray(invoiceData.shipments)
-                        ? invoiceData.shipments
-                        : [];
-
+                    const shipments = Array.isArray(invoiceData.shipments) ? invoiceData.shipments : [];
                     if (shipments.length === 0) {
                         this.addShipmentRow();
                     } else {
@@ -758,11 +686,9 @@
                     document.getElementById("form-title").textContent = "Create New Invoice";
                     document.getElementById("editing-id").value = "";
                     document.getElementById("i-date").value = this.todayISO();
-
                     this.updateDisplayedInvoiceNumber();
                     this.addShipmentRow();
                 }
-
                 this.calculateTotals();
             },
 
@@ -773,93 +699,32 @@
                 const tr = document.createElement("tr");
                 tr.dataset.rowId = shipment.rowId;
                 tr.className = "border-b border-gray-200 hover:bg-gray-100";
-
                 tr.innerHTML = `
-                    <td class="p-1">
-                        <input
-                            type="text"
-                            data-field="customer"
-                            class="w-full border p-1 rounded text-sm"
-                            required
-                        >
-                    </td>
-
-                    <td class="p-1">
-                        <input
-                            type="text"
-                            data-field="shipId"
-                            class="w-full border p-1 rounded text-sm"
-                            required
-                        >
-                    </td>
-
-                    <td class="p-1">
-                        <input
-                            type="number"
-                            data-field="wt"
-                            class="w-full border p-1 rounded text-sm"
-                            required
-                            min="0.1"
-                            step="0.1"
-                        >
-                    </td>
-
-                    <td class="p-1">
-                        <input
-                            type="number"
-                            data-field="boxes"
-                            class="w-full border p-1 rounded text-sm"
-                            required
-                            min="1"
-                            step="1"
-                        >
-                    </td>
-
+                    <td class="p-1"><input type="text" data-field="customer" class="w-full border p-1 rounded text-sm" required></td>
+                    <td class="p-1"><input type="text" data-field="shipId" class="w-full border p-1 rounded text-sm" required></td>
+                    <td class="p-1"><input type="number" data-field="wt" class="w-full border p-1 rounded text-sm" required min="0" step="0.1" placeholder="Weight"></td>
+                    <td class="p-1"><input type="number" data-field="boxes" class="w-full border p-1 rounded text-sm" required min="1" step="1"></td>
                     <td class="p-1">
                         <div class="flex flex-col gap-1">
                             <select data-field="amountMode" class="w-full border p-1 rounded text-xs bg-white">
                                 <option value="rate">Rate × KG</option>
                                 <option value="direct">Direct Amount</option>
                             </select>
-                            <input
-                                type="number"
-                                data-field="rate"
-                                class="w-full border p-1 rounded text-sm"
-                                required
-                                min="0"
-                                step="0.01"
-                                placeholder="Enter rate"
-                            >
+                            <input type="number" data-field="rate" class="w-full border p-1 rounded text-sm" required min="0" step="0.01" placeholder="Enter rate/value">
                         </div>
                     </td>
-
                     <td class="p-1 text-center">
                         <label class="relative inline-flex items-center cursor-pointer justify-center w-full">
-                            <input
-                                type="checkbox"
-                                data-field="includesGst"
-                                class="sr-only peer"
-                            >
+                            <input type="checkbox" data-field="includesGst" class="sr-only peer">
                             <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                             <span class="gst-label ml-2 text-xs text-gray-600 w-6">No</span>
                         </label>
                     </td>
-
-                    <td class="p-1 text-right font-medium text-gray-700 bg-gray-50 base-amount">
-                        0.00
-                    </td>
-
+                    <td class="p-1 text-right font-medium text-gray-700 bg-gray-50 base-amount">0.00</td>
                     <td class="p-1 text-center">
-                        <button
-                            type="button"
-                            data-remove-row="${shipment.rowId}"
-                            class="text-red-500 hover:text-red-700 p-1"
-                            title="Remove row"
-                        >
+                        <button type="button" data-remove-row="${shipment.rowId}" class="text-red-500 hover:text-red-700 p-1" title="Remove row">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
-                                </path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                             </svg>
                         </button>
                     </td>
@@ -868,15 +733,14 @@
                 const inputs = tr.querySelectorAll("[data-field]");
                 inputs.forEach(input => {
                     const field = input.dataset.field;
-
                     if (field === "includesGst") {
                         input.checked = shipment.includesGst;
                     } else if (field === "wt") {
-                        input.value = shipment.wt || "";
+                        input.value = shipment.wt !== 0 ? shipment.wt : "";
                     } else if (field === "boxes") {
-                        input.value = shipment.boxes || "";
+                        input.value = shipment.boxes !== 0 ? shipment.boxes : "";
                     } else if (field === "rate") {
-                        input.value = shipment.rate || "";
+                        input.value = shipment.rate !== 0 ? shipment.rate : "";
                     } else if (field === "amountMode") {
                         input.value = shipment.amountMode;
                     } else {
@@ -884,9 +748,7 @@
                     }
                 });
 
-                this.refreshShipmentRow(shipment.rowId);
                 document.getElementById("shipments-body").appendChild(tr);
-                this.updateShipmentInputState(shipment.rowId);
                 this.refreshShipmentRow(shipment.rowId);
                 this.calculateTotals();
             },
@@ -894,24 +756,30 @@
             refreshShipmentRow(id) {
                 const shipment = this.currentShipments.find(s => s.rowId === id);
                 const row = document.querySelector(`tr[data-row-id="${CSS.escape(id)}"]`);
-
                 if (!shipment || !row) return;
 
                 shipment.baseAmt = this.calculateShipmentAmount(shipment);
-
                 const amountCell = row.querySelector(".base-amount");
                 const gstLabel = row.querySelector(".gst-label");
                 const gstCheckbox = row.querySelector('[data-field="includesGst"]');
+                const wtInput = row.querySelector('[data-field="wt"]');
 
                 if (amountCell) amountCell.textContent = shipment.baseAmt.toFixed(2);
                 if (gstLabel) gstLabel.textContent = shipment.includesGst ? "Yes" : "No";
                 if (gstCheckbox) gstCheckbox.checked = shipment.includesGst;
+                
+                if (wtInput) {
+                    if (shipment.amountMode === 'direct') {
+                        wtInput.removeAttribute('required');
+                    } else {
+                        wtInput.setAttribute('required', 'required');
+                    }
+                }
             },
 
             updateShipment(id, field, value) {
                 const shipment = this.currentShipments.find(s => s.rowId === id);
                 if (!shipment) return;
-
                 if (field === "includesGst") {
                     shipment.includesGst = Boolean(value);
                 } else if (field === "amountMode") {
@@ -925,7 +793,6 @@
                 } else if (field === "customer" || field === "shipId") {
                     shipment[field] = String(value ?? "");
                 }
-
                 this.refreshShipmentRow(id);
                 this.calculateTotals();
             },
@@ -935,11 +802,7 @@
                     this.showError("At least one shipment row is required.");
                     return;
                 }
-
-                this.currentShipments = this.currentShipments.filter(
-                    shipment => shipment.rowId !== id
-                );
-
+                this.currentShipments = this.currentShipments.filter(shipment => shipment.rowId !== id);
                 document.querySelector(`tr[data-row-id="${CSS.escape(id)}"]`)?.remove();
                 this.calculateTotals();
             },
@@ -950,66 +813,33 @@
                 const phone = document.getElementById("c-phone").value.trim();
                 const dateRaw = document.getElementById("i-date").value;
 
-                if (!name) {
-                    this.showError("Please enter the consignee name/company.");
+                if (!name || !address || !phone || !dateRaw) {
+                    this.showError("Please fill out all consignee details completely.");
                     return false;
                 }
-
-                if (!address) {
-                    this.showError("Please enter the consignee address.");
-                    return false;
-                }
-
-                if (!phone) {
-                    this.showError("Please enter the phone number.");
-                    return false;
-                }
-
-                if (!dateRaw) {
-                    this.showError("Please select the invoice date.");
-                    return false;
-                }
-
                 if (!this.currentShipments.length) {
                     this.showError("Please add at least one shipment.");
                     return false;
                 }
-
                 for (let i = 0; i < this.currentShipments.length; i++) {
                     const s = this.currentShipments[i];
-
-                    if (!s.customer.trim()) {
-                        this.showError(`Shipment row ${i + 1}: customer is required.`);
+                    if (!s.customer.trim() || !s.shipId.trim()) {
+                        this.showError(`Shipment row ${i + 1}: customer and shipment ID are required.`);
                         return false;
                     }
-
-                    if (!s.shipId.trim()) {
-                        this.showError(`Shipment row ${i + 1}: shipment ID is required.`);
-                        return false;
-                    }
-
-                // Global invoice listener: every authenticated user sees
-                // every invoice in the shared collection.
-                onSnapshot(
-                    invoicesCol,
-                    snapshot => {
                 }
-
                 return true;
             },
 
             formatDate(dateRaw) {
                 if (!dateRaw) return "";
-
                 const parts = dateRaw.split("-");
                 if (parts.length !== 3) return dateRaw;
-
                 return `${parts[2]}/${parts[1]}/${parts[0]}`;
             },
 
             collectInvoiceData() {
                 const totals = this.calculateTotals();
-
                 const shipments = this.currentShipments.map(shipment => ({
                     rowId: shipment.rowId,
                     customer: shipment.customer.trim(),
@@ -1021,7 +851,6 @@
                     includesGst: Boolean(shipment.includesGst),
                     baseAmt: this.calculateShipmentAmount(shipment)
                 }));
-
                 return {
                     consignee: {
                         name: document.getElementById("c-name").value.trim(),
@@ -1037,113 +866,58 @@
             },
 
             async createInvoice(invoiceData) {
-                if (!currentUser || !invoicesCol || !metaDoc) {
-                    throw new Error("Database is not connected.");
-                }
-
-                // Generate the invoice number and increment the sequence in
-                // one Firestore transaction so two users cannot receive the
-                // same invoice number.
+                if (!currentUser || !invoicesCol) throw new Error("Database is not connected.");
                 const invoiceRef = doc(invoicesCol);
-
-                await runTransaction(db, async transaction => {
-                    const metaSnapshot = await transaction.get(metaDoc);
-
-                    let sequence = 5;
-
-                    if (metaSnapshot.exists()) {
-                        const storedSequence = this.toInteger(
-                            metaSnapshot.data().currentSequence
-                        );
-                        if (storedSequence > 0) sequence = storedSequence;
-                    }
-
-                    const invNo = this.generateInvString(sequence);
-
-                    const finalInvoice = {
-                        ...invoiceData,
-                        invNo,
-                        createdAt: Date.now(),
-                        updatedAt: Date.now()
-                    };
-
-                    transaction.set(invoiceRef, finalInvoice);
-                    transaction.set(
-                        metaDoc,
-                        { currentSequence: sequence + 1 },
-                        { merge: true }
-                    );
-
-                    invoiceData._generatedId = invoiceRef.id;
-                    invoiceData._generatedInvNo = invNo;
-                });
+                const invNo = this.generateInvString(this.currentInvNumber);
+                const finalInvoice = {
+                    ...invoiceData,
+                    invNo,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+                await setDoc(invoiceRef, finalInvoice);
             },
 
             async updateInvoice(id, invoiceData) {
-                if (!currentUser || !invoicesCol) {
-                    throw new Error("Database is not connected.");
-                }
-
+                if (!currentUser || !invoicesCol) throw new Error("Database is not connected.");
                 const existing = this.invoices.find(invoice => invoice.id === id);
-
-                if (!existing) {
-                    throw new Error("The invoice you are trying to edit no longer exists.");
-                }
-
+                if (!existing) throw new Error("The invoice you are trying to edit no longer exists.");
                 const docRef = doc(invoicesCol, id);
-
                 const finalInvoice = {
                     ...invoiceData,
                     invNo: existing.invNo,
                     createdAt: existing.createdAt || Date.now(),
                     updatedAt: Date.now()
                 };
-
-                // Replace the editable invoice data cleanly instead of
-                // accidentally retaining stale shipment fields.
                 await setDoc(docRef, finalInvoice);
             },
 
             async saveInvoice() {
                 if (this.isSaving) return;
-
                 this.clearError();
-
                 if (!this.validateForm()) return;
 
                 this.isSaving = true;
-                this.showLoader(
-                    this.editingInvoiceId ? "Updating Invoice..." : "Saving Invoice..."
-                );
+                this.showLoader(this.editingInvoiceId ? "Updating Invoice..." : "Saving Invoice...");
 
                 try {
                     const invoiceData = this.collectInvoiceData();
-                    const editingId = this.editingInvoiceId;
-
-                    if (editingId) {
-                        await this.updateInvoice(editingId, invoiceData);
+                    if (this.editingInvoiceId) {
+                        await this.updateInvoice(this.editingInvoiceId, invoiceData);
                     } else {
                         await this.createInvoice(invoiceData);
                     }
-
                     this.isSaving = false;
                     this.editingInvoiceId = null;
                     document.getElementById("editing-id").value = "";
-
                     this.hideLoader();
                     this.navigate("list");
                 } catch (error) {
                     console.error("Save/update error:", error);
-
                     this.isSaving = false;
                     this.hideLoader();
-
                     const message = error?.message || "Unable to save invoice.";
-                    this.showError(
-                        message.includes("permission")
-                            ? "Permission denied by Firebase. Check Firestore rules."
-                            : `Failed to save invoice: ${message}`
-                    );
+                    this.showError(message.includes("permission") ? "Permission denied by Firebase. Check Firestore rules." : `Failed to save invoice: ${message}`);
                 }
             },
 
@@ -1151,7 +925,6 @@
                 const tbody = document.getElementById("invoice-list-body");
                 const emptyState = document.getElementById("empty-state");
                 const tableContainer = tbody.parentElement.parentElement;
-
                 tbody.innerHTML = "";
 
                 if (!this.invoices.length) {
@@ -1162,84 +935,36 @@
 
                 tableContainer.classList.remove("hidden");
                 emptyState.classList.add("hidden");
-
-                const sorted = [...this.invoices].sort(
-                    (a, b) => this.toNumber(b.createdAt) - this.toNumber(a.createdAt)
-                );
+                const sorted = [...this.invoices].reverse();
 
                 sorted.forEach(invoice => {
                     const tr = document.createElement("tr");
                     tr.className = "border-b hover:bg-gray-50";
-
-                    const invNoCell = document.createElement("td");
-                    invNoCell.className = "p-3 text-blue-700 font-medium";
-                    invNoCell.textContent = invoice.invNo || "-";
-
-                    const dateCell = document.createElement("td");
-                    dateCell.className = "p-3";
-                    dateCell.textContent = invoice.date || "-";
-
-                    const consigneeCell = document.createElement("td");
-                    consigneeCell.className = "p-3";
-
-                    const name = document.createElement("div");
-                    name.className = "font-medium";
-                    name.textContent = invoice.consignee?.name || "-";
-
-                    const count = document.createElement("div");
-                    count.className = "text-xs text-gray-500";
-                    count.textContent = `${invoice.shipments?.length || 0} shipment(s)`;
-
-                    consigneeCell.appendChild(name);
-                    consigneeCell.appendChild(count);
-
-                    const amountCell = document.createElement("td");
-                    amountCell.className = "p-3 text-right font-bold text-gray-800";
-                    amountCell.textContent =
-                        `₹ ${this.toNumber(invoice.totals?.grandTotal).toFixed(2)}`;
-
-                    const actionsCell = document.createElement("td");
-                    actionsCell.className = "p-3 text-center space-x-2";
-
-                    const printButton = document.createElement("button");
-                    printButton.type = "button";
-                    printButton.className =
-                        "text-white bg-green-500 hover:bg-green-600 px-2 py-1 rounded text-sm transition shadow";
-                    printButton.textContent = "Print";
-                    printButton.addEventListener("click", () => {
-                        this.viewAndPrint(invoice.id);
-                    });
-
-                    const editButton = document.createElement("button");
-                    editButton.type = "button";
-                    editButton.className =
-                        "text-white bg-blue-500 hover:bg-blue-600 px-2 py-1 rounded text-sm transition shadow";
-                    editButton.textContent = "Edit";
-                    editButton.addEventListener("click", () => {
-                        this.editInvoice(invoice.id);
-                    });
-
-                    actionsCell.appendChild(printButton);
-                    actionsCell.appendChild(editButton);
-
-                    tr.appendChild(invNoCell);
-                    tr.appendChild(dateCell);
-                    tr.appendChild(consigneeCell);
-                    tr.appendChild(amountCell);
-                    tr.appendChild(actionsCell);
-
+                    tr.innerHTML = `
+                        <td class="p-3 text-blue-700 font-medium">${invoice.invNo || "-"}</td>
+                        <td class="p-3">${invoice.date || "-"}</td>
+                        <td class="p-3">
+                            <div class="font-medium">${invoice.consignee?.name || "-"}</div>
+                            <div class="text-xs text-gray-500">${invoice.shipments?.length || 0} shipment(s)</div>
+                        </td>
+                        <td class="p-3 text-right font-bold text-gray-800">₹ ${this.toNumber(invoice.totals?.grandTotal).toFixed(2)}</td>
+                        <td class="p-3 text-center space-x-2">
+                            <button class="print-btn text-white bg-green-500 hover:bg-green-600 px-2 py-1 rounded text-sm transition shadow">Print</button>
+                            <button class="edit-btn text-white bg-blue-500 hover:bg-blue-600 px-2 py-1 rounded text-sm transition shadow">Edit</button>
+                        </td>
+                    `;
+                    tr.querySelector('.print-btn').addEventListener('click', () => this.viewAndPrint(invoice.id));
+                    tr.querySelector('.edit-btn').addEventListener('click', () => this.editInvoice(invoice.id));
                     tbody.appendChild(tr);
                 });
             },
 
             editInvoice(id) {
                 const invoice = this.invoices.find(item => item.id === id);
-
                 if (!invoice) {
                     this.showError("Invoice not found.");
                     return;
                 }
-
                 this.editingInvoiceId = id;
                 this.navigate("create");
                 this.setupCreateForm(invoice);
@@ -1247,35 +972,25 @@
 
             viewAndPrint(id) {
                 const invoice = this.invoices.find(item => item.id === id);
-
-                if (!invoice) {
-                    this.showError("Invoice not found.");
-                    return;
-                }
+                if (!invoice) return;
 
                 document.getElementById("print-inv-no").textContent = invoice.invNo || "";
                 document.getElementById("print-date").textContent = invoice.date || "";
-
-                document.getElementById("print-c-name").textContent =
-                    invoice.consignee?.name || "";
-                document.getElementById("print-c-address").textContent =
-                    invoice.consignee?.address || "";
-                document.getElementById("print-c-phone").textContent =
-                    invoice.consignee?.phone || "";
-                document.getElementById("print-c-gst").textContent =
-                    invoice.consignee?.gst || "";
+                document.getElementById("print-c-name").textContent = invoice.consignee?.name || "";
+                document.getElementById("print-c-address").textContent = invoice.consignee?.address || "";
+                document.getElementById("print-c-phone").textContent = invoice.consignee?.phone || "";
+                document.getElementById("print-c-gst").textContent = invoice.consignee?.gst || "";
 
                 const tbody = document.getElementById("print-items-body");
                 tbody.innerHTML = "";
 
                 (invoice.shipments || []).forEach(shipment => {
                     const tr = document.createElement("tr");
-
                     const cells = [
                         shipment.customer || "",
                         shipment.shipId || "",
-                        shipment.wt ?? "",
-                        shipment.boxes ?? "",
+                        shipment.wt !== 0 ? shipment.wt : "",
+                        shipment.boxes !== 0 ? shipment.boxes : "",
                         shipment.amountMode === "direct"
                             ? `DIRECT ${this.toNumber(shipment.rate).toFixed(2)}${shipment.includesGst ? " *" : ""}`
                             : `${this.toNumber(shipment.rate).toFixed(2)}${shipment.includesGst ? " *" : ""}`,
@@ -1287,33 +1002,20 @@
                         td.style.borderBottom = "1px solid #000";
                         td.style.padding = "4px 6px";
                         td.style.textAlign = index === 0 ? "left" : "right";
-
-                        if (index < 5) {
-                            td.style.borderRight = "1px solid #000";
-                        }
-
+                        if (index < 5) td.style.borderRight = "1px solid #000";
                         td.textContent = value;
                         tr.appendChild(td);
                     });
-
                     tbody.appendChild(tr);
                 });
 
                 const totals = invoice.totals || {};
-
-                document.getElementById("print-subtotal").textContent =
-                    this.toNumber(totals.subtotal).toFixed(2);
-                document.getElementById("print-cgst").textContent =
-                    this.toNumber(totals.cgst).toFixed(2);
-                document.getElementById("print-sgst").textContent =
-                    this.toNumber(totals.sgst).toFixed(2);
-                document.getElementById("print-total-tax").textContent =
-                    this.toNumber(totals.totalTax).toFixed(2);
-                document.getElementById("print-grand-total").textContent =
-                    this.toNumber(totals.grandTotal).toFixed(2);
-
-                document.getElementById("print-words").textContent =
-                    `RUPEES ${this.numberToWords(this.toNumber(totals.grandTotal))} ONLY`;
+                document.getElementById("print-subtotal").textContent = this.toNumber(totals.subtotal).toFixed(2);
+                document.getElementById("print-cgst").textContent = this.toNumber(totals.cgst).toFixed(2);
+                document.getElementById("print-sgst").textContent = this.toNumber(totals.sgst).toFixed(2);
+                document.getElementById("print-total-tax").textContent = this.toNumber(totals.totalTax).toFixed(2);
+                document.getElementById("print-grand-total").textContent = this.toNumber(totals.grandTotal).toFixed(2);
+                document.getElementById("print-words").textContent = `RUPEES ${this.numberToWords(this.toNumber(totals.grandTotal))} ONLY`;
 
                 setTimeout(() => window.print(), 200);
             },
@@ -1321,76 +1023,37 @@
             numberToWords(amount) {
                 const fixed = this.toNumber(amount).toFixed(2);
                 let [rupees, paise] = fixed.split(".");
-
                 rupees = Number.parseInt(rupees, 10);
                 paise = Number.parseInt(paise, 10);
-
                 let words = this.convertNumber(rupees);
-
-                if (paise > 0) {
-                    words += ` AND ${this.convertNumber(paise)} PAISE`;
-                }
-
+                if (paise > 0) words += ` AND ${this.convertNumber(paise)} PAISE`;
                 return words;
             },
 
             convertNumber(num) {
                 if (num === 0) return "ZERO";
-
-                const a = [
-                    "", "ONE ", "TWO ", "THREE ", "FOUR ", "FIVE ",
-                    "SIX ", "SEVEN ", "EIGHT ", "NINE ", "TEN ",
-                    "ELEVEN ", "TWELVE ", "THIRTEEN ", "FOURTEEN ",
-                    "FIFTEEN ", "SIXTEEN ", "SEVENTEEN ", "EIGHTEEN ",
-                    "NINETEEN "
-                ];
-
-                const b = [
-                    "", "", "TWENTY", "THIRTY", "FORTY",
-                    "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"
-                ];
-
+                const a = ["", "ONE ", "TWO ", "THREE ", "FOUR ", "FIVE ", "SIX ", "SEVEN ", "EIGHT ", "NINE ", "TEN ", "ELEVEN ", "TWELVE ", "THIRTEEN ", "FOURTEEN ", "FIFTEEN ", "SIXTEEN ", "SEVENTEEN ", "EIGHTEEN ", "NINETEEN "];
+                const b = ["", "", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"];
                 num = String(num);
-
                 if (num.length > 9) return "OVERFLOW";
-
-                const n = ("000000000" + num)
-                    .slice(-9)
-                    .match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
-
+                const n = ("000000000" + num).slice(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
                 if (!n) return "";
-
                 let str = "";
-
-                str += n[1] !== "00"
-                    ? `${a[Number(n[1])] || `${b[n[1][0]]} ${a[n[1][1]]}`}CRORE `
-                    : "";
-
-                str += n[2] !== "00"
-                    ? `${a[Number(n[2])] || `${b[n[2][0]]} ${a[n[2][1]]}`}LAKH `
-                    : "";
-
-                str += n[3] !== "00"
-                    ? `${a[Number(n[3])] || `${b[n[3][0]]} ${a[n[3][1]]}`}THOUSAND `
-                    : "";
-
-                str += n[4] !== "0"
-                    ? `${a[Number(n[4])]}HUNDRED `
-                    : "";
-
-                str += n[5] !== "00"
-                    ? `${str ? "AND " : ""}${a[Number(n[5])] || `${b[n[5][0]]} ${a[n[5][1]]}`}`
-                    : "";
-
+                str += n[1] !== "00" ? `${a[Number(n[1])] || `${b[n[1][0]]} ${a[n[1][1]]}`}CRORE ` : "";
+                str += n[2] !== "00" ? `${a[Number(n[2])] || `${b[n[2][0]]} ${a[n[2][1]]}`}LAKH ` : "";
+                str += n[3] !== "00" ? `${a[Number(n[3])] || `${b[n[3][0]]} ${a[n[3][1]]}`}THOUSAND ` : "";
+                str += n[4] !== "0" ? `${a[Number(n[4])]}HUNDRED ` : "";
+                str += n[5] !== "00" ? `${str ? "AND " : ""}${a[Number(n[5])] || `${b[n[5][0]]} ${a[n[5][1]]}`}` : "";
                 return str.trim();
             }
         };
 
         window.app = app;
-
         window.addEventListener("load", () => {
             app.init();
         });
     </script>
 </body>
 </html>
+
+
