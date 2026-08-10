@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDD Logistics - Invoice Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                background-color: white;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            .print-container {
+                width: 100%;
+                margin: 0;
+                padding: 0;
+                box-shadow: none;
+            }
+            .page-break {
+                page-break-after: always;
+            }
+        }
+        
+        .print-only {
+            display: none;
+        }
+
+        /* Custom Scrollbar for tables */
+        .table-container::-webkit-scrollbar {
+            height: 8px;
+        }
+        .table-container::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Navigation Bar -->
+    <nav class="bg-blue-800 text-white shadow-md no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <span class="font-bold text-xl tracking-wider">SDD LOGISTICS</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="app.navigate('create')" id="nav-create" class="px-3 py-2 rounded-md text-sm font-medium bg-blue-900 transition-colors">Create Invoice</button>
+                    <button onclick="app.navigate('list')" id="nav-list" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">Previous Bills</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow p-4 sm:p-6 lg:p-8 no-print">
+        <div class="max-w-5xl mx-auto">
+            
+            <!-- Create/Edit Invoice View -->
+            <div id="view-create" class="bg-white rounded-lg shadow-lg p-6 mb-8 hidden">
+                <div class="flex justify-between items-center mb-6 border-b pb-4">
+                    <h2 class="text-2xl font-bold text-gray-800" id="form-title">Create New Invoice</h2>
+                    <div class="text-gray-600 font-medium bg-gray-100 px-3 py-1 rounded">
+                        Inv No: <span id="display-inv-no" class="text-blue-700">SDD/INV/2026/08/05</span>
+                    </div>
+                </div>
+
+                <div id="form-error" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+                    <span class="block sm:inline" id="form-error-msg"></span>
+                </div>
+
+                <form id="invoice-form" onsubmit="event.preventDefault(); app.saveInvoice();">
+                    <input type="hidden" id="editing-id" value="">
+                    
+                    <!-- Consignee Details Section -->
+                    <div class="mb-8">
+                        <h3 class="text-lg font-semibold mb-4 text-blue-800 border-b pb-2">Consignee Details</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Name / Company</label>
+                                <input type="text" id="c-name" required class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. PATEL TRADERS">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">GST No.</label>
+                                <input type="text" id="c-gst" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase" placeholder="e.g. 19AETPP6151L1ZN">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                                <input type="text" id="c-address" required class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. 65, GT Road (8 New), Burdwan-713101">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Phone No.</label>
+                                <input type="text" id="c-phone" required class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. 9144990433">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
+                                <input type="date" id="i-date" required class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Shipments Section -->
+                    <div class="mb-8">
+                        <div class="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 class="text-lg font-semibold text-blue-800">Shipments</h3>
+                            <button type="button" onclick="app.addShipmentRow()" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors flex items-center">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                Add Row
+                            </button>
+                        </div>
+                        
+                        <div class="table-container overflow-x-auto bg-gray-50 rounded border border-gray-200">
+                            <table class="w-full text-left border-collapse min-w-[800px]">
+                                <thead class="bg-gray-200 text-gray-700 text-sm">
+                                    <tr>
+                                        <th class="p-2 border-b">Customer (End User)</th>
+                                        <th class="p-2 border-b w-32">Shipment ID</th>
+                                        <th class="p-2 border-b w-24">Wt. (KG)</th>
+                                        <th class="p-2 border-b w-20">Boxes</th>
+                                        <th class="p-2 border-b w-28">Rate (₹)</th>
+                                        <th class="p-2 border-b w-36 text-center text-xs">Rate Includes GST? (18%)</th>
+                                        <th class="p-2 border-b w-28 text-right">Base Amt (₹)</th>
+                                        <th class="p-2 border-b w-12"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="shipments-body">
+                                    <!-- Rows will be added here dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Summary & Actions -->
+                    <div class="flex flex-col md:flex-row justify-between items-end gap-6 bg-blue-50 p-4 rounded border border-blue-100">
+                        <div class="w-full md:w-1/2">
+                            <div class="text-sm text-gray-500 mb-1">Amount in Words:</div>
+                            <div id="amount-in-words" class="font-medium text-blue-900 italic uppercase">ZERO RUPEES ONLY</div>
+                        </div>
+                        
+                        <div class="w-full md:w-1/3 space-y-2">
+                            <div class="flex justify-between text-gray-600">
+                                <span>Subtotal:</span>
+                                <span class="font-medium">₹ <span id="summary-subtotal">0.00</span></span>
+                            </div>
+                            <div class="flex justify-between text-gray-600">
+                                <span>CGST (9%):</span>
+                                <span class="font-medium">₹ <span id="summary-cgst">0.00</span></span>
+                            </div>
+                            <div class="flex justify-between text-gray-600 border-b border-gray-300 pb-2">
+                                <span>SGST (9%):</span>
+                                <span class="font-medium">₹ <span id="summary-sgst">0.00</span></span>
+                            </div>
+                            <div class="flex justify-between text-xl font-bold text-gray-800 pt-1">
+                                <span>Grand Total:</span>
+                                <span>₹ <span id="summary-total">0.00</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 flex justify-end space-x-3 border-t pt-4">
+                        <button type="button" onclick="app.navigate('list')" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100 transition-colors">Cancel</button>
+                        <button type="submit" class="px-6 py-2 bg-blue-700 text-white rounded font-medium hover:bg-blue-800 transition-colors shadow">Save Invoice</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Invoice List View -->
+            <div id="view-list" class="bg-white rounded-lg shadow-lg p-6 mb-8 block">
+                <div class="flex justify-between items-center mb-6 border-b pb-4">
+                    <h2 class="text-2xl font-bold text-gray-800">Previous Bills</h2>
+                    <button onclick="app.navigate('create')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium transition-colors shadow flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        New Invoice
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto rounded border border-gray-200">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-100 text-gray-700">
+                            <tr>
+                                <th class="p-3 border-b font-semibold">Inv No.</th>
+                                <th class="p-3 border-b font-semibold">Date</th>
+                                <th class="p-3 border-b font-semibold">Consignee</th>
+                                <th class="p-3 border-b font-semibold text-right">Amount (₹)</th>
+                                <th class="p-3 border-b font-semibold text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="invoice-list-body">
+                            <!-- List rows dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="empty-state" class="text-center py-12 text-gray-500 hidden">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <p class="text-lg">No invoices generated yet.</p>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Print Layout (Hidden on screen, shown when printing) -->
+    <div id="print-area" class="print-only bg-white w-full text-black" style="font-family: Arial, sans-serif; font-size: 14px; max-width: 210mm; margin: 0 auto; padding: 20mm; box-sizing: border-box;">
+        
+        <!-- Outer Border -->
+        <div style="border: 1px solid #000;">
+            <!-- Header -->
+            <div style="text-align: center; border-bottom: 1px solid #000; padding: 10px;">
+                <h1 style="font-size: 24px; font-weight: bold; margin: 0;">SDD LOGISTICS</h1>
+                <p style="margin: 2px 0;">Nerodighi, Barddhaman - 713101</p>
+                <p style="margin: 2px 0; font-weight: bold;">GSTIN: 19BFWPN3464B1Z2</p>
+                <h2 style="font-size: 18px; font-weight: bold; margin: 10px 0 0 0; text-decoration: underline;">TAX INVOICE</h2>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #000;">
+                <div>
+                    <p style="margin: 2px 0;"><strong>Invoice No:</strong> <span id="print-inv-no"></span></p>
+                    <p style="margin: 2px 0;"><strong>Date:</strong> <span id="print-date"></span></p>
+                </div>
+                <div style="text-align: right;">
+                    <p style="margin: 2px 0;"><strong>HSN Code:</strong> 996511</p>
+                </div>
+            </div>
+
+            <!-- Consignee Box -->
+            <div style="padding: 10px; border-bottom: 1px solid #000;">
+                <h3 style="font-weight: bold; margin: 0 0 5px 0; text-decoration: underline;">CONSIGNEE</h3>
+                <p style="margin: 2px 0; font-weight: bold;" id="print-c-name"></p>
+                <p style="margin: 2px 0;" id="print-c-address"></p>
+                <p style="margin: 2px 0;"><strong>Ph. No.:</strong> <span id="print-c-phone"></span></p>
+                <p style="margin: 2px 0;"><strong>GST No.:</strong> <span id="print-c-gst"></span></p>
+            </div>
+
+            <!-- Table -->
+            <table style="width: 100%; border-collapse: collapse; text-align: center;">
+                <thead>
+                    <tr style="border-bottom: 1px solid #000;">
+                        <th style="border-right: 1px solid #000; padding: 8px; text-align: left;">CUSTOMER</th>
+                        <th style="border-right: 1px solid #000; padding: 8px;">SHIPMENT ID</th>
+                        <th style="border-right: 1px solid #000; padding: 8px;">WT. (KG)</th>
+                        <th style="border-right: 1px solid #000; padding: 8px;">BOXES</th>
+                        <th style="border-right: 1px solid #000; padding: 8px; text-align: right;">RATE (₹)</th>
+                        <th style="padding: 8px; text-align: right;">AMOUNT (₹)</th>
+                    </tr>
+                </thead>
+                <tbody id="print-items-body">
+                    <!-- Items injected here -->
+                </tbody>
+                <tfoot style="border-top: 1px solid #000;">
+                    <tr>
+                        <td colspan="5" style="border-right: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">SUBTOTAL</td>
+                        <td style="padding: 8px; text-align: right;" id="print-subtotal"></td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" style="border-right: 1px solid #000; padding: 8px; text-align: right;">CGST (09%)</td>
+                        <td style="padding: 8px; text-align: right;" id="print-cgst"></td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" style="border-right: 1px solid #000; padding: 8px; text-align: right;">SGST (09%)</td>
+                        <td style="padding: 8px; text-align: right;" id="print-sgst"></td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" style="border-right: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">TOTAL TAX</td>
+                        <td style="padding: 8px; text-align: right;" id="print-total-tax"></td>
+                    </tr>
+                    <tr style="border-top: 1px solid #000; background-color: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+                        <td colspan="5" style="border-right: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">GRAND TOTAL</td>
+                        <td style="padding: 8px; text-align: right; font-weight: bold;" id="print-grand-total"></td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <!-- Amount in Words -->
+            <div style="padding: 10px; border-top: 1px solid #000; border-bottom: 1px solid #000;">
+                <p style="margin: 0;"><strong>Amount in words:</strong></p>
+                <p id="print-words" style="margin: 5px 0 0 0; text-transform: uppercase; font-weight: bold;"></p>
+            </div>
+
+            <!-- Footer section -->
+            <div style="display: flex; justify-content: space-between; padding: 10px;">
+                <div style="width: 50%;">
+                    <h3 style="font-weight: bold; margin: 0 0 5px 0; text-decoration: underline;">BANK DETAILS</h3>
+                    <p style="margin: 2px 0;"><strong>Bank Name:</strong> UNION BANK</p>
+                    <p style="margin: 2px 0;"><strong>Account Name:</strong> SDD LOGISTICS</p>
+                    <p style="margin: 2px 0;"><strong>A/C No.:</strong> 616801010050251</p>
+                    <p style="margin: 2px 0;"><strong>IFSC Code:</strong> UBIN0561681</p>
+                </div>
+                <div style="width: 40%; text-align: right; display: flex; flex-direction: column; justify-content: space-between;">
+                    <p style="font-weight: bold; margin: 0;">For SDD LOGISTICS</p>
+                    <p style="margin: 60px 0 0 0; font-size: 12px; font-style: italic;">Authorised Signatory</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        let appFirebase, db, auth;
+        let currentUser = null;
+        let invoicesCol = null;
+        let metaDoc = null;
+
+        try {
+            appFirebase = initializeApp(firebaseConfig);
+            db = getFirestore(appFirebase);
+            auth = getAuth(appFirebase);
+        } catch (e) {
+            console.error("Cloud DB init failed", e);
+        }
+
+        const app = {
+            invoices: [], 
+            currentInvNumber: 5, 
+            currentShipments: [], 
+
+            init: async function() {
+                document.getElementById('i-date').valueAsDate = new Date();
+                this.renderList();
+                this.navigate('list');
+
+                if (auth) {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined') {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                        currentUser = auth.currentUser;
+                        if (currentUser) {
+                            // Isolate data privately to the logged-in user context
+                            invoicesCol = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'invoices');
+                            metaDoc = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'metadata', 'settings');
+                            this.setupCloudSync();
+                        }
+                    } catch(e) { console.error("Auth error", e); }
+                }
+            },
+
+            setupCloudSync() {
+                if (!currentUser) return;
+                
+                // Real-time sync for the next invoice sequence number
+                onSnapshot(metaDoc, (docSnap) => {
+                    if (docSnap.exists()) {
+                        this.currentInvNumber = docSnap.data().currentSequence || 5;
+                    }
+                }, (error) => console.error("Sync error:", error));
+
+                // Real-time sync for the invoice list
+                onSnapshot(invoicesCol, (snapshot) => {
+                    const loaded = [];
+                    snapshot.forEach(docSnap => {
+                        loaded.push({ ...docSnap.data(), id: docSnap.id });
+                    });
+                    
+                    // Sort in memory by creation time
+                    loaded.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    
+                    this.invoices = loaded;
+                    this.renderList();
+                }, (error) => console.error("Sync error:", error));
+            },
+
+            showError(msg) {
+                const errDiv = document.getElementById('form-error');
+                document.getElementById('form-error-msg').textContent = msg;
+                errDiv.classList.remove('hidden');
+                setTimeout(() => errDiv.classList.add('hidden'), 4000);
+            },
+
+            navigate(view) {
+                document.getElementById('view-create').classList.add('hidden');
+                document.getElementById('view-list').classList.add('hidden');
+                
+                document.getElementById('nav-create').classList.remove('bg-blue-900');
+                document.getElementById('nav-list').classList.remove('bg-blue-900');
+
+                if (view === 'create') {
+                    document.getElementById('view-create').classList.remove('hidden');
+                    document.getElementById('nav-create').classList.add('bg-blue-900');
+                    this.setupCreateForm();
+                } else {
+                    document.getElementById('view-list').classList.remove('hidden');
+                    document.getElementById('nav-list').classList.add('bg-blue-900');
+                    this.renderList();
+                }
+            },
+
+            generateInvString(num) {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const paddedNum = String(num).padStart(2, '0');
+                return `SDD/INV/${year}/${month}/${paddedNum}`;
+            },
+
+            setupCreateForm(invoiceData = null) {
+                const formTitle = document.getElementById('form-title');
+                const tbody = document.getElementById('shipments-body');
+                tbody.innerHTML = '';
+                this.currentShipments = [];
+                document.getElementById('form-error').classList.add('hidden');
+
+                if (invoiceData) {
+                    formTitle.textContent = "Edit Invoice";
+                    document.getElementById('display-inv-no').textContent = invoiceData.invNo;
+                    document.getElementById('editing-id').value = invoiceData.id;
+                    
+                    document.getElementById('c-name').value = invoiceData.consignee.name;
+                    document.getElementById('c-gst').value = invoiceData.consignee.gst;
+                    document.getElementById('c-address').value = invoiceData.consignee.address;
+                    document.getElementById('c-phone').value = invoiceData.consignee.phone;
+                    document.getElementById('i-date').value = invoiceData.dateRaw;
+
+                    invoiceData.shipments.forEach(s => this.addShipmentRow(s));
+                } else {
+                    formTitle.textContent = "Create New Invoice";
+                    document.getElementById('invoice-form').reset();
+                    document.getElementById('editing-id').value = "";
+                    document.getElementById('i-date').valueAsDate = new Date();
+                    
+                    const nextInv = this.generateInvString(this.currentInvNumber);
+                    document.getElementById('display-inv-no').textContent = nextInv;
+                    
+                    this.addShipmentRow();
+                }
+                this.calculateTotals();
+            },
+
+            addShipmentRow(data = null) {
+                const id = 'shipment_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                const defaultData = { customer: '', shipId: '', wt: '', boxes: '', rate: '', includesGst: false, baseAmt: 0 };
+                const s = data || defaultData;
+                
+                this.currentShipments.push({ rowId: id, ...s });
+
+                const tr = document.createElement('tr');
+                tr.id = id;
+                tr.className = "border-b border-gray-200 hover:bg-gray-100";
+                
+                const toggleHtml = `
+                    <label class="relative inline-flex items-center cursor-pointer justify-center w-full">
+                      <input type="checkbox" class="sr-only peer" onchange="app.updateShipment('${id}', 'includesGst', this.checked)" ${s.includesGst ? 'checked' : ''}>
+                      <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                      <span class="ml-2 text-xs text-gray-600 w-6">${s.includesGst ? 'Yes' : 'No'}</span>
+                    </label>
+                `;
+
+                tr.innerHTML = `
+                    <td class="p-1"><input type="text" class="w-full border p-1 rounded text-sm" value="${s.customer}" oninput="app.updateShipment('${id}', 'customer', this.value)" required></td>
+                    <td class="p-1"><input type="text" class="w-full border p-1 rounded text-sm" value="${s.shipId}" oninput="app.updateShipment('${id}', 'shipId', this.value)" required></td>
+                    <td class="p-1"><input type="number" class="w-full border p-1 rounded text-sm" value="${s.wt}" oninput="app.updateShipment('${id}', 'wt', parseFloat(this.value))" required min="0.1" step="0.1"></td>
+                    <td class="p-1"><input type="number" class="w-full border p-1 rounded text-sm" value="${s.boxes}" oninput="app.updateShipment('${id}', 'boxes', parseInt(this.value))" required min="1"></td>
+                    <td class="p-1"><input type="number" class="w-full border p-1 rounded text-sm" value="${s.rate}" oninput="app.updateShipment('${id}', 'rate', parseFloat(this.value))" required min="0" step="0.01"></td>
+                    <td class="p-1 text-center" id="toggle-container-${id}">${toggleHtml}</td>
+                    <td class="p-1 text-right font-medium text-gray-700 bg-gray-50" id="base-amt-${id}">${s.baseAmt.toFixed(2)}</td>
+                    <td class="p-1 text-center">
+                        <button type="button" onclick="app.removeShipmentRow('${id}')" class="text-red-500 hover:text-red-700 p-1" title="Remove row">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </td>
+                `;
+                document.getElementById('shipments-body').appendChild(tr);
+                this.calculateTotals();
+            },
+
+            updateShipment(id, field, value) {
+                const index = this.currentShipments.findIndex(s => s.rowId === id);
+                if (index > -1) {
+                    this.currentShipments[index][field] = value;
+                    
+                    if (field === 'includesGst') {
+                        const span = document.querySelector(`#toggle-container-${id} span`);
+                        if(span) span.textContent = value ? 'Yes' : 'No';
+                    }
+
+                    if (['rate', 'wt', 'includesGst'].includes(field)) {
+                        const s = this.currentShipments[index];
+                        const rate = parseFloat(s.rate) || 0;
+                        const wt = parseFloat(s.wt) || 0;
+                        
+                        let baseRate = rate;
+                        if (s.includesGst) {
+                            baseRate = rate / 1.18;
+                        }
+                        
+                        s.baseAmt = baseRate * wt;
+                        document.getElementById(`base-amt-${id}`).textContent = s.baseAmt.toFixed(2);
+                    }
+                    this.calculateTotals();
+                }
+            },
+
+            removeShipmentRow(id) {
+                if (this.currentShipments.length <= 1) return; 
+                this.currentShipments = this.currentShipments.filter(s => s.rowId !== id);
+                document.getElementById(id).remove();
+                this.calculateTotals();
+            },
+
+            calculateTotals() {
+                let subtotal = 0;
+                this.currentShipments.forEach(s => {
+                    subtotal += (parseFloat(s.baseAmt) || 0);
+                });
+
+                const cgst = subtotal * 0.09;
+                const sgst = subtotal * 0.09;
+                const totalTax = cgst + sgst;
+                const grandTotal = subtotal + totalTax;
+
+                document.getElementById('summary-subtotal').textContent = subtotal.toFixed(2);
+                document.getElementById('summary-cgst').textContent = cgst.toFixed(2);
+                document.getElementById('summary-sgst').textContent = sgst.toFixed(2);
+                document.getElementById('summary-total').textContent = grandTotal.toFixed(2);
+                
+                document.getElementById('amount-in-words').textContent = this.numberToWords(grandTotal) + " ONLY";
+            },
+
+            async saveInvoice() {
+                const validShipments = this.currentShipments.filter(s => s.customer.trim() !== '' && s.shipId.trim() !== '');
+                
+                if (validShipments.length === 0) {
+                    this.showError("Please add at least one valid shipment.");
+                    return;
+                }
+
+                const editingId = document.getElementById('editing-id').value;
+                const dateRaw = document.getElementById('i-date').value;
+                
+                const dParts = dateRaw.split('-');
+                const dateFormatted = `${dParts[2]}/${dParts[1]}/${dParts[0]}`;
+
+                let subtotal = 0;
+                validShipments.forEach(s => subtotal += (parseFloat(s.baseAmt) || 0));
+                const cgst = subtotal * 0.09;
+                const sgst = subtotal * 0.09;
+                const totalTax = cgst + sgst;
+                const grandTotal = subtotal + totalTax;
+
+                const invoiceData = {
+                    consignee: {
+                        name: document.getElementById('c-name').value.trim(),
+                        gst: document.getElementById('c-gst').value.trim(),
+                        address: document.getElementById('c-address').value.trim(),
+                        phone: document.getElementById('c-phone').value.trim()
+                    },
+                    dateRaw: dateRaw,
+                    date: dateFormatted,
+                    shipments: validShipments.map(s => ({...s})), 
+                    totals: { subtotal, cgst, sgst, totalTax, grandTotal }
+                };
+
+                if (editingId) {
+                    // Update existing
+                    const originalInvoice = this.invoices.find(i => i.id === editingId);
+                    invoiceData.id = editingId;
+                    invoiceData.invNo = originalInvoice ? originalInvoice.invNo : this.generateInvString(this.currentInvNumber);
+                    invoiceData.createdAt = originalInvoice ? (originalInvoice.createdAt || Date.now()) : Date.now();
+                    
+                    if (currentUser && invoicesCol) {
+                        const docRef = doc(invoicesCol, editingId);
+                        await updateDoc(docRef, invoiceData);
+                    }
+                } else {
+                    // Create new
+                    invoiceData.id = Date.now().toString();
+                    invoiceData.invNo = this.generateInvString(this.currentInvNumber);
+                    invoiceData.createdAt = Date.now();
+                    
+                    if (currentUser && invoicesCol) {
+                        const docRef = doc(invoicesCol, invoiceData.id);
+                        await setDoc(docRef, invoiceData);
+                        
+                        // Increment sequence safely
+                        await setDoc(metaDoc, { currentSequence: this.currentInvNumber + 1 }, { merge: true });
+                    }
+                }
+
+                this.navigate('list');
+            },
+
+            renderList() {
+                const tbody = document.getElementById('invoice-list-body');
+                const emptyState = document.getElementById('empty-state');
+                const tableContainer = tbody.parentElement.parentElement;
+                
+                tbody.innerHTML = '';
+                
+                if (this.invoices.length === 0) {
+                    tableContainer.classList.add('hidden');
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+
+                tableContainer.classList.remove('hidden');
+                emptyState.classList.add('hidden');
+
+                const sorted = [...this.invoices].reverse();
+
+                sorted.forEach(inv => {
+                    const tr = document.createElement('tr');
+                    tr.className = "border-b hover:bg-gray-50";
+                    tr.innerHTML = `
+                        <td class="p-3 text-blue-700 font-medium">${inv.invNo}</td>
+                        <td class="p-3">${inv.date}</td>
+                        <td class="p-3">
+                            <div class="font-medium">${inv.consignee.name}</div>
+                            <div class="text-xs text-gray-500">${inv.shipments.length} shipment(s)</div>
+                        </td>
+                        <td class="p-3 text-right font-bold text-gray-800">₹ ${inv.totals.grandTotal.toFixed(2)}</td>
+                        <td class="p-3 text-center space-x-2">
+                            <button onclick="app.viewAndPrint('${inv.id}')" class="text-white bg-green-500 hover:bg-green-600 px-2 py-1 rounded text-sm transition shadow">Print</button>
+                            <button onclick="app.editInvoice('${inv.id}')" class="text-white bg-blue-500 hover:bg-blue-600 px-2 py-1 rounded text-sm transition shadow">Edit</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            },
+
+            editInvoice(id) {
+                const inv = this.invoices.find(i => i.id === id);
+                if (inv) {
+                    this.navigate('create');
+                    this.setupCreateForm(inv);
+                }
+            },
+
+            viewAndPrint(id) {
+                const inv = this.invoices.find(i => i.id === id);
+                if (!inv) return;
+
+                document.getElementById('print-inv-no').textContent = inv.invNo;
+                document.getElementById('print-date').textContent = inv.date;
+                
+                document.getElementById('print-c-name').textContent = inv.consignee.name;
+                document.getElementById('print-c-address').textContent = inv.consignee.address;
+                document.getElementById('print-c-phone').textContent = inv.consignee.phone;
+                document.getElementById('print-c-gst').textContent = inv.consignee.gst;
+
+                const tbody = document.getElementById('print-items-body');
+                tbody.innerHTML = '';
+                
+                inv.shipments.forEach(s => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 8px; text-align: left;">${s.customer}</td>
+                        <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 8px;">${s.shipId}</td>
+                        <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 8px;">${s.wt}</td>
+                        <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 8px;">${s.boxes}</td>
+                        <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 8px; text-align: right;">${parseFloat(s.rate).toFixed(2)} ${s.includesGst ? '*' : ''}</td>
+                        <td style="padding: 8px; border-bottom: 1px solid #000; text-align: right;">${s.baseAmt.toFixed(2)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('print-subtotal').textContent = inv.totals.subtotal.toFixed(2);
+                document.getElementById('print-cgst').textContent = inv.totals.cgst.toFixed(2);
+                document.getElementById('print-sgst').textContent = inv.totals.sgst.toFixed(2);
+                document.getElementById('print-total-tax').textContent = inv.totals.totalTax.toFixed(2);
+                document.getElementById('print-grand-total').textContent = inv.totals.grandTotal.toFixed(2);
+                
+                document.getElementById('print-words').textContent = "RUPEES " + this.numberToWords(inv.totals.grandTotal) + " ONLY";
+
+                setTimeout(() => {
+                    window.print();
+                }, 200);
+            },
+
+            numberToWords(amount) {
+                let [rupees, paise] = amount.toFixed(2).split('.');
+                rupees = parseInt(rupees, 10);
+                paise = parseInt(paise, 10);
+
+                let words = this.convertNumber(rupees);
+                if (paise > 0) {
+                    words += " AND " + this.convertNumber(paise) + " PAISE";
+                }
+                return words;
+            },
+
+            convertNumber(num) {
+                if (num === 0) return "ZERO";
+
+                const a = ['', 'ONE ', 'TWO ', 'THREE ', 'FOUR ', 'FIVE ', 'SIX ', 'SEVEN ', 'EIGHT ', 'NINE ', 'TEN ', 'ELEVEN ', 'TWELVE ', 'THIRTEEN ', 'FOURTEEN ', 'FIFTEEN ', 'SIXTEEN ', 'SEVENTEEN ', 'EIGHTEEN ', 'NINETEEN '];
+                const b = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
+
+                if ((num = num.toString()).length > 9) return 'overflow';
+                let n = ('000000000' + num).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+                if (!n) return;
+                
+                let str = '';
+                str += (n[1] != 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'CRORE ' : '';
+                str += (n[2] != 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'LAKH ' : '';
+                str += (n[3] != 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'THOUSAND ' : '';
+                str += (n[4] != 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'HUNDRED ' : '';
+                str += (n[5] != 0) ? ((str != '') ? 'AND ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) : '';
+                
+                return str.trim();
+            }
+        };
+
+        // Make app globally accessible for HTML inline event listeners (like onclick="app.navigate(...)")
+        window.app = app;
+        
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
